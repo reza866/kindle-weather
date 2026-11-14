@@ -45,11 +45,10 @@ def fetch(cfg):
         "latitude": cfg["latitude"],
         "longitude": cfg["longitude"],
         "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
-        "hourly": "temperature_2m,weather_code,precipitation_probability",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
                  "precipitation_probability_max",
         "timezone": "auto",
-        "forecast_days": 5,
+        "forecast_days": 11,  # today + next 10 days
         "temperature_unit": cfg["temperature_unit"],
     }
     url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
@@ -67,24 +66,18 @@ def fetch(cfg):
 def sample():
     """Fixed data for offline layout checks."""
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
-    hours = [now + timedelta(hours=i) for i in range(48)]
-    days = [now.date() + timedelta(days=i) for i in range(5)]
-    codes = [2, 61, 3, 71, 95]
+    days = [now.date() + timedelta(days=i) for i in range(11)]
     return {
         "utc_offset_seconds": 0,
         "current": {"time": now.strftime("%Y-%m-%dT%H:%M"), "temperature_2m": -3.4,
                     "apparent_temperature": -7.1, "weather_code": 2,
                     "wind_speed_10m": 14.2},
         "current_units": {"wind_speed_10m": "km/h"},
-        "hourly": {"time": [h.strftime("%Y-%m-%dT%H:%M") for h in hours],
-                   "temperature_2m": [10 - i % 14 for i in range(48)],
-                   "weather_code": [[0, 2, 3, 45, 61, 71, 95][i % 7] for i in range(48)],
-                   "precipitation_probability": [(i * 7) % 100 for i in range(48)]},
         "daily": {"time": [d.isoformat() for d in days],
-                  "weather_code": codes,
-                  "temperature_2m_max": [12.3, 9.8, 7.1, 1.2, 14.0],
-                  "temperature_2m_min": [4.1, 2.2, -1.5, -6.0, 8.3],
-                  "precipitation_probability_max": [20, 80, 40, 90, 60]},
+                  "weather_code": [2, 61, 3, 71, 95, 0, 45, 1, 80, 85, 3],
+                  "temperature_2m_max": [1.3, 2.8, 0.1, -1.2, 4.0, -3.5, 0.0, 2.2, 3.1, -0.4, 1.0],
+                  "temperature_2m_min": [-4.1, -2.2, -5.5, -9.0, 0.3, -12.0, -3.3, -2.0, -1.1, -6.6, -3.0],
+                  "precipitation_probability_max": [20, 80, 40, 90, 60, 0, 10, 5, 70, 85, 30]},
     }
 
 
@@ -185,84 +178,90 @@ def clock(dt, cfg):
     return dt.strftime("%I:%M %p").lstrip("0")
 
 
-def hour_label(dt, cfg):
-    if cfg.get("clock_24h", True):
-        return dt.strftime("%H:00")
-    return dt.strftime("%I %p").lstrip("0")
-
-
 def render(cfg, data):
-    W, H, SAFE = cfg["width"], cfg["height"], min(cfg["safe_height"], cfg["height"])
+    """Current conditions on top, then one row per day for the next 10 days.
+
+    The layout is designed for 600 x 800 and scales to other sizes. Nothing is
+    drawn below `safe_height` (defaults to the full height).
+    """
+    W, H = cfg["width"], cfg["height"]
+    SAFE = min(cfg.get("safe_height", H), H)
     img = Image.new("L", (W * S, H * S), WHITE)
     d = ImageDraw.Draw(img)
-    p = lambda v: v * S  # final px -> working px
-    k = SAFE / 560.0     # vertical scale relative to the reference layout
-    kw = W / 600.0
-    f = min(k, kw)       # font / icon scale
-    M = 24 * kw          # side margin
+    p = lambda v: v * S          # final px -> working px
+    fx, fy = W / 600.0, SAFE / 800.0
+    f = min(fx, fy)              # font / icon scale
+    y = lambda v: v * fy         # reference y -> final px
+    M = 24 * fx                  # side margin
+
+    def rule(yy, colour=BLACK, width=1):
+        d.line([p(M), p(yy), p(W - M), p(yy)], fill=colour, width=width * S)
 
     # local time at the forecast location, as a naive datetime
     now = (datetime.now(timezone.utc).replace(tzinfo=None)
            + timedelta(seconds=data.get("utc_offset_seconds", 0)))
-    cur, hourly, daily = data["current"], data["hourly"], data["daily"]
+    cur, daily = data["current"], data["daily"]
     label, kind = describe(cur["weather_code"])
 
     # header
-    d.text((p(M), p(22 * k)), cfg["place"], font=font("bold", 24 * f), fill=BLACK, anchor="lm")
-    d.text((p(W - M), p(22 * k)), now.strftime("%a %d %b") + "  ·  updated " + clock(now, cfg),
-           font=font("regular", 17 * f), fill=GREY, anchor="rm")
-    d.line([p(M), p(42 * k), p(W - M), p(42 * k)], fill=BLACK, width=S)
+    d.text((p(M), p(y(26))), cfg["place"], font=font("bold", 26 * f), fill=BLACK, anchor="lm")
+    d.text((p(W - M), p(y(26))), now.strftime("%a %d %b") + "  ·  updated " + clock(now, cfg),
+           font=font("regular", 18 * f), fill=GREY, anchor="rm")
+    rule(y(50))
 
     # current conditions
     isz = 170 * f
-    icon(d, kind, p(M), p(52 * k), p(isz))
-    tx = M + isz + 22 * kw
-    d.text((p(tx), p(118 * k)), deg(cur["temperature_2m"]), font=font("bold", 118 * f),
+    icon(d, kind, p(M), p(y(62)), p(isz))
+    tx = M + isz + 24 * fx
+    d.text((p(tx), p(y(128))), deg(cur["temperature_2m"]), font=font("bold", 120 * f),
            fill=BLACK, anchor="lm")
-    d.text((p(tx), p(196 * k)), label, font=font("bold", 28 * f), fill=BLACK, anchor="lm")
+    d.text((p(tx), p(y(212))), label, font=font("bold", 30 * f), fill=BLACK, anchor="lm")
     wind_unit = data.get("current_units", {}).get("wind_speed_10m", "km/h")
-    line = "High %s   Low %s   Rain %d%%" % (
+    today = "Today  %s / %s   Rain %d%%" % (
         deg(daily["temperature_2m_max"][0]), deg(daily["temperature_2m_min"][0]),
         daily["precipitation_probability_max"][0] or 0)
-    d.text((p(M), p(246 * k)), line, font=font("regular", 22 * f), fill=BLACK, anchor="lm")
-    d.text((p(W - M), p(246 * k)),
+    d.text((p(M), p(y(264))), today, font=font("regular", 22 * f), fill=BLACK, anchor="lm")
+    d.text((p(W - M), p(y(264))),
            "Feels %s  ·  Wind %d %s" % (deg(cur["apparent_temperature"]),
                                          round(cur["wind_speed_10m"]), wind_unit),
-           font=font("regular", 18 * f), fill=GREY, anchor="rm")
-    d.line([p(M), p(270 * k), p(W - M), p(270 * k)], fill=BLACK, width=S)
+           font=font("regular", 19 * f), fill=GREY, anchor="rm")
+    rule(y(290), width=2)
 
-    # next hours: every 3 hours after now
-    cur_t = datetime.strptime(cur["time"], "%Y-%m-%dT%H:%M")
-    times = [datetime.strptime(t, "%Y-%m-%dT%H:%M") for t in hourly["time"]]
-    idx = [i for i, t in enumerate(times) if t > cur_t][::3][:5]
-    col = (W - 2 * M) / 5.0
-    for n, i in enumerate(idx):
-        cx = M + col * (n + 0.5)
-        d.text((p(cx), p(290 * k)), hour_label(times[i], cfg), font=font("regular", 18 * f),
-               fill=BLACK, anchor="mm")
-        s = 56 * f
-        icon(d, describe(hourly["weather_code"][i])[1], p(cx - s / 2), p(302 * k), p(s))
-        d.text((p(cx), p(378 * k)), deg(hourly["temperature_2m"][i]), font=font("bold", 24 * f),
-               fill=BLACK, anchor="mm")
-        pr = hourly["precipitation_probability"][i]
-        if pr is not None and pr >= 20:
-            d.text((p(cx), p(401 * k)), "%d%%" % pr, font=font("regular", 15 * f),
-                   fill=GREY, anchor="mm")
-    d.line([p(M), p(416 * k), p(W - M), p(416 * k)], fill=BLACK, width=S)
+    # next 10 days: day, icon, rain chance, low ---bar--- high
+    days = list(range(1, min(11, len(daily["time"]))))
+    if not days:
+        return img.resize((W, H), Image.LANCZOS), now
+    top, bottom = y(294), SAFE - 4 * fy
+    rh = (bottom - top) / len(days)
+    lows = [daily["temperature_2m_min"][i] for i in days]
+    highs = [daily["temperature_2m_max"][i] for i in days]
+    lo_all, hi_all = min(lows), max(highs)
+    span = max(hi_all - lo_all, 1.0)
+    bx0, bx1 = 350 * fx, 486 * fx            # temperature range bar
+    bar_h = 10 * f
+    row_font, small_font = font("bold", 23 * f), font("regular", 21 * f)
+    isz = min(rh * 0.82, 44 * f)
 
-    # next days
-    days = list(range(1, min(5, len(daily["time"]))))
-    col = (W - 2 * M) / float(len(days))
     for n, i in enumerate(days):
-        cx = M + col * (n + 0.5)
+        cy = top + rh * (n + 0.5)
         day = datetime.strptime(daily["time"][i], "%Y-%m-%d")
-        d.text((p(cx), p(436 * k)), day.strftime("%a"), font=font("bold", 20 * f),
-               fill=BLACK, anchor="mm")
-        s = 60 * f
-        icon(d, describe(daily["weather_code"][i])[1], p(cx - s / 2), p(448 * k), p(s))
-        d.text((p(cx), p(530 * k)),
-               "%s / %s" % (deg(daily["temperature_2m_max"][i]), deg(daily["temperature_2m_min"][i])),
-               font=font("regular", 20 * f), fill=BLACK, anchor="mm")
+        d.text((p(M), p(cy)), day.strftime("%a %d").replace(" 0", " "), font=row_font,
+               fill=BLACK, anchor="lm")
+        icon(d, describe(daily["weather_code"][i])[1],
+             p(168 * fx - isz / 2), p(cy - isz / 2), p(isz))
+        rain = daily["precipitation_probability_max"][i]
+        if rain is not None and rain >= 10:
+            d.text((p(262 * fx), p(cy)), "%d%%" % rain, font=small_font, fill=GREY, anchor="mm")
+        lo, hi = lows[n], highs[n]
+        d.text((p(bx0 - 10 * fx), p(cy)), deg(lo), font=small_font, fill=BLACK, anchor="rm")
+        d.text((p(bx1 + 10 * fx), p(cy)), deg(hi), font=row_font, fill=BLACK, anchor="lm")
+        d.line([p(bx0), p(cy), p(bx1), p(cy)], fill=200, width=2 * S)
+        x0 = bx0 + (lo - lo_all) / span * (bx1 - bx0)
+        x1 = max(bx0 + (hi - lo_all) / span * (bx1 - bx0), x0 + bar_h)
+        d.rounded_rectangle([p(x0), p(cy - bar_h / 2), p(x1), p(cy + bar_h / 2)],
+                            radius=p(bar_h / 2), fill=BLACK)
+        if n < len(days) - 1:
+            rule(top + rh * (n + 1), colour=210)
 
     return img.resize((W, H), Image.LANCZOS), now
 

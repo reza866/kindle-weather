@@ -4,6 +4,6 @@
   "clock_24h": true,
   "width": 600,
   "height": 800,
-  "safe_height": 560,
+  "safe_height": 800,
   "refresh_seconds": 900
 }
