@@ -26,6 +26,10 @@ Weather data comes from [Open-Meteo](https://open-meteo.com), which is free and 
 
 The page is public. Free GitHub accounts can only publish Pages from public repositories.
 
+## When an update fails
+
+The weather service is sometimes unreachable from one GitHub server while a fresh server connects straight away. Each update therefore gets up to three attempts, each on its own fresh server. If all three fail, the run is marked failed, nothing is published, and the Kindle keeps showing the last good image (the "updated" time on screen shows how old it is).
+
 ## Updates and security
 
 - Pillow and the GitHub actions are pinned to exact files and commits. Dependabot opens a pull request when a newer version or a security fix exists; nothing changes until you merge it.

@@ -52,13 +52,14 @@ def fetch(cfg):
         "temperature_unit": cfg["temperature_unit"],
     }
     url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
-    # Retry for ~2 minutes: the API sometimes stalls briefly. If it still fails, the job
-    # stops before deploying, so the Kindle keeps showing the last good image.
-    waits = [10, 20, 30, 60]
+    # A few quick tries only. When a GitHub server can't reach the API, waiting longer
+    # hasn't helped, so the workflow retries on a fresh server instead. If every attempt
+    # fails, nothing is deployed and the Kindle keeps showing the last good image.
+    waits = [5, 15]
     last = None
     for attempt in range(len(waits) + 1):
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with urllib.request.urlopen(url, timeout=20) as r:
                 return json.load(r)
         except Exception as e:
             last = e

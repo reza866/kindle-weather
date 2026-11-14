@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/30 * * * *"   # GitHub may run this a few minutes late
   workflow_dispatch:          # "Run workflow" button for a manual refresh
+    inputs:
+      simulate_failures:
+        description: "Testing only: make this many render attempts fail on purpose"
+        type: choice
+        options: ["0", "1", "2", "3"]
+        default: "0"
 
 permissions: {}
 
@@ -11,13 +17,22 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# The weather service is sometimes unreachable from one GitHub server while a
+# fresh server connects straight away. So rendering gets up to three attempts
+# (build, retry1, retry2), each a separate job on its own fresh server. A later
+# attempt runs only if the earlier ones produced no image, and only the last
+# attempt can fail the run. All three share the same steps.
 jobs:
   build:
+    name: Render (attempt 1)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    continue-on-error: true
     permissions:
-      contents: read          # this job runs outside code and holds the location: read-only
-    steps:
+      contents: read          # these jobs run outside code and hold the location: read-only
+    outputs:
+      ok: ${{ steps.upload.outcome == 'success' }}
+    steps: &render_steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -35,14 +50,50 @@ jobs:
         run: "python -m pip install --require-hashes --only-binary :all: -r requirements.txt"
 
       - name: Render
+        id: render
+        continue-on-error: ${{ github.job != 'retry2' }}
         env:
           LATITUDE: ${{ secrets.LATITUDE }}
           LONGITUDE: ${{ secrets.LONGITUDE }}
-        run: python render.py
+          ATTEMPT: ${{ github.job == 'build' && '1' || github.job == 'retry1' && '2' || '3' }}
+          SIMULATE_FAILURES: ${{ inputs.simulate_failures || '0' }}
+        run: |
+          if [ "$ATTEMPT" -le "$SIMULATE_FAILURES" ]; then
+            echo "::warning::Simulated failure of attempt $ATTEMPT"
+            exit 1
+          fi
+          python render.py
 
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      - id: upload
+        if: steps.render.outcome == 'success'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+
+  retry1:
+    name: Render (attempt 2)
+    needs: build
+    if: ${{ !cancelled() && needs.build.outputs.ok != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.upload.outcome == 'success' }}
+    steps: *render_steps
+
+  retry2:
+    name: Render (attempt 3)
+    needs: [build, retry1]
+    if: ${{ !cancelled() && needs.build.outputs.ok != 'true' && needs.retry1.outputs.ok != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.upload.outcome == 'success' }}
+    steps: *render_steps
 
   # GitHub pauses scheduled workflows in public repos after 60 days without
   # repository activity. Re-enabling the workflow resets that. This job is kept
@@ -61,7 +112,8 @@ jobs:
         run: gh api -X PUT "repos/$REPO/actions/workflows/update.yml/enable"
 
   deploy:
-    needs: build
+    needs: [build, retry1, retry2]
+    if: ${{ !cancelled() && (needs.build.outputs.ok == 'true' || needs.retry1.outputs.ok == 'true' || needs.retry2.outputs.ok == 'true') }}
     runs-on: ubuntu-24.04
     permissions:
       pages: write
