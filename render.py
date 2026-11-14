@@ -52,14 +52,19 @@ def fetch(cfg):
         "temperature_unit": cfg["temperature_unit"],
     }
     url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
+    # Retry for ~2 minutes: the API sometimes stalls briefly. If it still fails, the job
+    # stops before deploying, so the Kindle keeps showing the last good image.
+    waits = [10, 20, 30, 60]
     last = None
-    for attempt in range(3):
+    for attempt in range(len(waits) + 1):
         try:
             with urllib.request.urlopen(url, timeout=30) as r:
                 return json.load(r)
-        except Exception as e:  # network hiccup: retry
+        except Exception as e:
             last = e
-            time.sleep(5 * (attempt + 1))
+            print("Fetch attempt %d failed: %s" % (attempt + 1, e), file=sys.stderr)
+            if attempt < len(waits):
+                time.sleep(waits[attempt])
     raise SystemExit("Could not fetch forecast: %s" % last)
 
 
