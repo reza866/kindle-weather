@@ -134,8 +134,10 @@ def _cloud(d, x, y, s, st, dy=0.0):
         for a, b, c, e in ell:
             d.ellipse([x + a * s + inset, y + b * s + inset,
                        x + c * s - inset, y + e * s - inset], fill=fill)
+        # The rectangle's top and sides lie inside the puffs, so only its bottom
+        # edge is part of the outline: inset the white fill at the bottom only.
         a, b, c, e = rect
-        d.rectangle([x + a * s, y + b * s + inset, x + c * s, y + e * s - inset], fill=fill)
+        d.rectangle([x + a * s, y + b * s, x + c * s, y + e * s - inset], fill=fill)
 
 
 def icon(d, kind, x, y, s):
