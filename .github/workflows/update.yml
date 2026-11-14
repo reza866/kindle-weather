@@ -2,7 +2,8 @@ name: Update weather
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # GitHub may run this a few minutes late
+    # Every 30 minutes, off the busy :00/:30 marks where GitHub delays or drops runs.
+    - cron: "7,37 * * * *"
   workflow_dispatch:          # "Run workflow" button for a manual refresh
     inputs:
       simulate_failures:
