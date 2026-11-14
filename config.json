@@ -1,0 +1,9 @@
+{
+  "place": "Home",
+  "temperature_unit": "celsius",
+  "clock_24h": true,
+  "width": 600,
+  "height": 800,
+  "safe_height": 560,
+  "refresh_seconds": 900
+}
