@@ -26,6 +26,12 @@ Weather data comes from [Open-Meteo](https://open-meteo.com), which is free and 
 
 The page is public. Free GitHub accounts can only publish Pages from public repositories.
 
+## Updates and security
+
+- Pillow and the GitHub actions are pinned to exact files and commits. Dependabot opens a pull request when a newer version or a security fix exists; nothing changes until you merge it.
+- After merging one, check that the next **Update weather** run succeeds. If it fails, the Kindle keeps showing the last good image.
+- The repository only allows GitHub's own actions, pinned to exact commits, and `main` can't be force-pushed or deleted.
+
 ## Kindle setup
 
 1. **Settings → Device Options → Device Info** shows the model and firmware. Set `width`/`height` to match.

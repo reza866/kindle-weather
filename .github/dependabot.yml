@@ -1,0 +1,20 @@
+# Monthly update suggestions (pull requests) for the pinned Pillow version and
+# the pinned GitHub actions. Nothing changes until a pull request is merged.
+# The cooldown skips releases younger than 14 days; security fixes are not delayed.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 4
